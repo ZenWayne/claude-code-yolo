@@ -2,6 +2,14 @@
 
 Run Claude Code with all permissions, yet in a secure environment. Let Claude Code fly to the moon.
 
+## Design Highlights
+
+- **On-demand `.venv` isolation**: When a `.venv` is detected, a named volume overlays it inside the container, preventing host/container Python environment conflicts while keeping the host `.venv` untouched. Same approach for Flutter's `build/` and `.dart_tool/`.
+- **Session persistence**: `~/.claude` and `~/.claude.json` are mounted read-write, so auth tokens, session history, and project memory survive across container restarts.
+- **Read-only sensitive mounts**: `~/.ssh` is mounted with `:ro` — Claude can use SSH keys for git operations but cannot modify or delete them.
+- **UID/GID alignment**: `--userns=keep-id` ensures file ownership matches the host, no permission fixups needed.
+- **Zero network config**: `--network=host` reuses the host's proxy, ADB server, and other services directly.
+
 ## Directory Structure
 
 ```
