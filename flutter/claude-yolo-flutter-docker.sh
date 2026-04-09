@@ -59,8 +59,10 @@ podman run -it --rm \
     -v "$HOME/.ssh":"/home/$USER/.ssh:ro" \
     -v "$HOME/.pub-cache":"/home/$USER/.pub-cache" \
     -v "$HOME/.gradle":"/home/$USER/.gradle" \
+    -v "/tmp":"/tmp" \
     -v "flutter_build_${WORK_DIR_ESCAPED}:$WORK_DIR/build" \
     -v "flutter_dart_tool_${WORK_DIR_ESCAPED}:$WORK_DIR/.dart_tool" \
+    -v "$WORK_DIR/../ai_tarot_backend:$WORK_DIR/../ai_tarot_backend" \
     -e ANTHROPIC_BASE_URL="$ANTHROPIC_BASE_URL" \
     -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
     -e DISABLE_AUTOUPDATER=1 \

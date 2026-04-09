@@ -78,8 +78,9 @@ ADD --chown=${HOST_USER_NAME}:${HOST_USER_GID} https://astral.sh/uv/install.sh /
 RUN sh /tmp/uv-install.sh \
     && rm /tmp/uv-install.sh
 
-# Install Claude Code using official installer
-RUN curl -fsSL https://claude.ai/install.sh | bash
+# Install Claude Code using local installer
+COPY --chown=${HOST_USER_NAME}:${HOST_USER_GID} install.sh /tmp/install.sh
+RUN bash /tmp/install.sh && rm /tmp/install.sh
 
 # Set working directory
 WORKDIR /workspace

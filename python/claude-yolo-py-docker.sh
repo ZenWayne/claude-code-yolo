@@ -6,20 +6,22 @@ replace_proxy() {
     echo "${proxy//127.0.0.1:10809/host.docker.internal:10809}"
 }
 
-# Get the absolute path of the current directory
+# 获取当前目录的绝对路径
 WORK_DIR=$(pwd)
 
-# Create a volume name based on the current directory (replace special chars to ensure validity)
+# 根据当前目录创建卷名（替换特殊字符，确保合法）
 VOLUME_NAME="claude-yolo-$(echo "$WORK_DIR" | sed 's/[^a-zA-Z0-9]/_/g' | tr '[:upper:]' '[:lower:]')"
 
-# Build volume mount arguments (preserving the same directory structure)
+# 构建 volume 挂载参数（保持相同目录结构）
 VOLUME_ARGS=(-v "$WORK_DIR:$WORK_DIR")
 
-# If .venv exists in the current directory, mount an empty volume over it (container creates its own venv)
+# 如果当前目录有 .venv，额外挂载一个空卷覆盖它（容器自己建venv）
 if [ -d ".venv" ]; then
-    echo "Detected .venv directory, excluded (container will use an isolated virtual environment: ${VOLUME_NAME}_venv)"
+    echo "检测到 .venv 目录，已排除（容器将使用独立的虚拟环境：${VOLUME_NAME}_venv）"
     VOLUME_ARGS+=(-v "${VOLUME_NAME}_venv:$WORK_DIR/.venv")
 fi
+
+#echo "当前目录挂载到：$WORK_DIR"
 
 podman run -it --rm \
     --userns=keep-id \
