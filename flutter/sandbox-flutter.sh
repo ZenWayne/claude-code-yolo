@@ -1,12 +1,6 @@
 #!/bin/bash
 # Flutter + Claude YOLO with sandbox command proxy
 # Mapped commands: flutter, adb, podman
-#
-# Prerequisites:
-#   1. Build the sandbox binary:
-#      cd ultra-sandbox/sandbox && go build -o ../.ultra_sandbox/sandbox .
-#   2. Start ADB server in network mode on the host:
-#      adb kill-server && adb -a nodaemon server &
 
 set -e
 

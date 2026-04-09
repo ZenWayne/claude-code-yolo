@@ -1,10 +1,6 @@
 #!/bin/bash
 # Python + Claude YOLO with sandbox command proxy
 # Mapped commands: podman
-#
-# Prerequisites:
-#   Build the sandbox binary:
-#   cd ultra-sandbox/sandbox && go build -o ../.ultra_sandbox/sandbox .
 
 set -e
 

@@ -43,15 +43,6 @@ ultra-sandbox/
 
 ---
 
-## Build
-
-```bash
-cd ultra-sandbox/sandbox
-go build -o ../.ultra_sandbox/sandbox .
-```
-
----
-
 ## Usage
 
 ### 1. Start the daemon (on host)
