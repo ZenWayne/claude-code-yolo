@@ -43,6 +43,17 @@ ultra-sandbox/
 
 ---
 
+## Installation
+
+```bash
+cd sandbox
+go build -o ~/.local/bin/sandbox .
+```
+
+Ensure `~/.local/bin` is in your `PATH`.
+
+---
+
 ## Usage
 
 ### 1. Start the daemon (on host)

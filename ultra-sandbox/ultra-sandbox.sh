@@ -18,7 +18,7 @@ VOLUME_ARGS=(-v "$WORK_DIR:$WORK_DIR")
 
 echo "Current directory mounted to: $WORK_DIR"
 
-# .ultra_sandbox dir: lives next to this script, holds sandbox binary + shims + daemon socket
+# .ultra_sandbox dir: holds shims + daemon socket (next to this script)
 ULTRA_SANDBOX_DIR="$(dirname "$(realpath "$0")")/.ultra_sandbox"
 mkdir -p "$ULTRA_SANDBOX_DIR"
 
@@ -29,13 +29,14 @@ podman run -it --rm \
     "${VOLUME_ARGS[@]}" \
     -v "$HOME/.ssh":"/home/$USER/.ssh:ro" \
     -v "$ULTRA_SANDBOX_DIR":"/ultra_sandbox" \
+    -v "$HOME/.local/bin/sandbox":"/usr/local/bin/sandbox:ro" \
     -e LANG="$LANG" \
     -e LC_ALL="$LC_ALL" \
     -e http_proxy="$(replace_proxy "$http_proxy")" \
     -e https_proxy="$(replace_proxy "$https_proxy")" \
     -e HTTP_PROXY="$(replace_proxy "$HTTP_PROXY")" \
     -e HTTPS_PROXY="$(replace_proxy "$HTTPS_PROXY")" \
-    -e PATH="/ultra_sandbox:$HOME/.local/bin/:$PATH" \
+    -e PATH="/ultra_sandbox:/home/$USER/.local/bin:/usr/local/bin:/usr/bin:/bin" \
     -e SANDBOX_SOCKET="/ultra_sandbox/daemon.sock" \
     -e NO_PROXY="$NO_PROXY" \
     -e no_proxy="$no_proxy" \

@@ -13,25 +13,26 @@ replace_proxy() {
     echo "${proxy//127.0.0.1:10809/host.docker.internal:10809}"
 }
 
-# --- Ensure sandbox binary exists -------------------------------------------
-if [ ! -x "$ULTRA_SANDBOX_DIR/sandbox" ]; then
-    echo "Error: sandbox binary not found. Build it first:"
-    echo "  cd ultra-sandbox/sandbox && go build -o ../.ultra_sandbox/sandbox ."
+# --- Ensure sandbox binary is installed -------------------------------------
+if ! command -v sandbox &>/dev/null; then
+    echo "Error: 'sandbox' not found in PATH. Install it to ~/.local/bin/sandbox first."
     exit 1
 fi
 
 # --- Ensure daemon is running ------------------------------------------------
+mkdir -p "$ULTRA_SANDBOX_DIR"
 SANDBOX_SOCKET="$ULTRA_SANDBOX_DIR/daemon.sock"
 if [ ! -S "$SANDBOX_SOCKET" ]; then
     echo "Starting sandbox daemon..."
-    SANDBOX_SOCKET="$SANDBOX_SOCKET" "$ULTRA_SANDBOX_DIR/sandbox" daemon &
+    SANDBOX_SOCKET="$SANDBOX_SOCKET" sandbox daemon &
     sleep 0.3
 fi
 
 # --- Map host commands -------------------------------------------------------
-SANDBOX_SOCKET="$SANDBOX_SOCKET" "$ULTRA_SANDBOX_DIR/sandbox" map flutter
-SANDBOX_SOCKET="$SANDBOX_SOCKET" "$ULTRA_SANDBOX_DIR/sandbox" map adb
-SANDBOX_SOCKET="$SANDBOX_SOCKET" "$ULTRA_SANDBOX_DIR/sandbox" map podman
+# Run from the parent of .ultra_sandbox/ so shims land there by default
+(cd "$(dirname "$ULTRA_SANDBOX_DIR")" && SANDBOX_SOCKET="$SANDBOX_SOCKET" sandbox map flutter)
+(cd "$(dirname "$ULTRA_SANDBOX_DIR")" && SANDBOX_SOCKET="$SANDBOX_SOCKET" sandbox map adb)
+(cd "$(dirname "$ULTRA_SANDBOX_DIR")" && SANDBOX_SOCKET="$SANDBOX_SOCKET" sandbox map podman)
 
 echo "=== sandbox mapped: flutter, adb, podman ==="
 
@@ -66,6 +67,7 @@ podman run -it --rm \
     -v "flutter_build_${WORK_DIR_ESCAPED}:$WORK_DIR/build" \
     -v "flutter_dart_tool_${WORK_DIR_ESCAPED}:$WORK_DIR/.dart_tool" \
     -v "$ULTRA_SANDBOX_DIR":"/ultra_sandbox" \
+    -v "$HOME/.local/bin/sandbox":"/usr/local/bin/sandbox:ro" \
     -e ANTHROPIC_BASE_URL="$ANTHROPIC_BASE_URL" \
     -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
     -e DISABLE_AUTOUPDATER=1 \

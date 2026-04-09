@@ -434,7 +434,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, `usage:
   sandbox daemon [--socket PATH]     start host daemon
   sandbox run <cmd> [args...]        run command via daemon
-  sandbox map <cmd> [--remove]       create/remove shim in .ultra_sandbox/`)
+  sandbox map <cmd> [--remove]       create/remove shim (SANDBOX_SHIM_DIR or ./.ultra_sandbox/)`)
 	os.Exit(1)
 }
 
@@ -468,10 +468,14 @@ func main() {
 		cmdName := os.Args[2]
 		remove := len(os.Args) > 3 && os.Args[3] == "--remove"
 
-		// sandboxDir: directory of this binary
-		self, _ := os.Executable()
-		sandboxDir := filepath.Dir(self)
-		runMap(sandboxDir, cmdName, remove)
+		// shim dir: $SANDBOX_SHIM_DIR, or .ultra_sandbox/ in cwd
+		shimDir := os.Getenv("SANDBOX_SHIM_DIR")
+		if shimDir == "" {
+			cwd, _ := os.Getwd()
+			shimDir = filepath.Join(cwd, ".ultra_sandbox")
+		}
+		os.MkdirAll(shimDir, 0755)
+		runMap(shimDir, cmdName, remove)
 
 	default:
 		// Allow argv[0] as command name (symlink invocation)
