@@ -178,9 +178,7 @@ sandbox map <cmd> [--remove]        create/remove a shim in $SANDBOX_DIR/bin/
 
 **Environment:** `SANDBOX_DIR` (default `.ultra_sandbox`) controls both the socket path (`$SANDBOX_DIR/daemon.sock`) and the shim directory (`$SANDBOX_DIR/bin/`).
 
-**Cross-platform:** the Rust implementation (`ultra-sandbox/sandbox-rs/`) targets Linux, macOS (x86_64 + arm64), and Windows (via `uds_windows` + ctrlc). CI builds all four in `.github/workflows/build.yml`.
-
-**Legacy Go implementation:** `ultra-sandbox/sandbox/` contains the original Go version. Wire-compatible with the Rust client/daemon.
+**Cross-platform:** the implementation (`ultra-sandbox/sandbox-rs/`) targets Linux, macOS (x86_64 + arm64), and Windows (via `uds_windows` + ctrlc). CI builds all four in `.github/workflows/build.yml`.
 
 ---
 
@@ -203,11 +201,7 @@ ultra-sandbox/                          # repo root
     ├── claude_code_base.Dockerfile     # debian + Node.js + Claude Code
     ├── ultra-sandbox.Dockerfile        # debian + dev tooling (generic)
     │
-    ├── sandbox/                        # original Go implementation
-    │   ├── main.go
-    │   └── go.mod
-    │
-    └── sandbox-rs/                     # Rust port (cross-platform, CI-built)
+    └── sandbox-rs/                     # Rust sandbox (cross-platform, CI-built)
         ├── Cargo.toml
         ├── Cargo.lock
         └── src/main.rs

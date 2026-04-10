@@ -7,7 +7,7 @@ Containerized Claude Code environments using Podman with sandbox command proxyin
 Build and install the sandbox binary to `~/.local/bin/sandbox` if missing or outdated:
 
 ```bash
-cd ultra-sandbox/sandbox && GOPATH=/tmp/build/gopath GOCACHE=/tmp/build/go-cache go build -o ~/.local/bin/sandbox .
+cd ultra-sandbox/sandbox-rs && cargo build --release && install -m 755 target/release/sandbox ~/.local/bin/sandbox
 ```
 
 Start the daemon on the host before launching any container:
