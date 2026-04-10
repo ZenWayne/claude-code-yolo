@@ -77,19 +77,15 @@ chmod +x ~/.local/bin/sandbox
 
 Make sure `~/.local/bin` is on your `PATH`.
 
-#### macOS (Apple Silicon / Intel)
+#### macOS (Apple Silicon)
 
 ```bash
-# Apple Silicon (M1/M2/M3/M4)
 curl -L https://github.com/ZenWayne/ultra-sandbox/releases/latest/download/sandbox-darwin-arm64 \
   -o ~/.local/bin/sandbox
-
-# Intel
-curl -L https://github.com/ZenWayne/ultra-sandbox/releases/latest/download/sandbox-darwin-x86_64 \
-  -o ~/.local/bin/sandbox
-
 chmod +x ~/.local/bin/sandbox
 ```
+
+> Intel Macs are not covered by prebuilt releases (GitHub's `macos-13` x86_64 runner is being phased out). Build from source — see below.
 
 > macOS runs containers inside a Linux VM (via `podman machine` or Docker Desktop), so `--network=host` targets the **VM**, not your Mac. Install podman before step 2:
 > ```bash
