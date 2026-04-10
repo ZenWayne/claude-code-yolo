@@ -65,24 +65,67 @@ Ultra-sandbox is a lightweight command-proxy system: a tiny daemon on the host, 
 
 ### 1. Install the `sandbox` binary on the host
 
-**Option A — download a prebuilt release** (recommended):
+Download a prebuilt release for your platform, or build from source.
+
+#### Linux (x86_64)
 
 ```bash
-# Pick the right binary for your platform from the Releases page
 curl -L https://github.com/ZenWayne/ultra-sandbox/releases/latest/download/sandbox-linux-x86_64 \
   -o ~/.local/bin/sandbox
 chmod +x ~/.local/bin/sandbox
 ```
 
-**Option B — build from source** (requires Rust 1.75+):
+Make sure `~/.local/bin` is on your `PATH`.
+
+#### macOS (Apple Silicon / Intel)
+
+```bash
+# Apple Silicon (M1/M2/M3/M4)
+curl -L https://github.com/ZenWayne/ultra-sandbox/releases/latest/download/sandbox-darwin-arm64 \
+  -o ~/.local/bin/sandbox
+
+# Intel
+curl -L https://github.com/ZenWayne/ultra-sandbox/releases/latest/download/sandbox-darwin-x86_64 \
+  -o ~/.local/bin/sandbox
+
+chmod +x ~/.local/bin/sandbox
+```
+
+> macOS runs containers inside a Linux VM (via `podman machine` or Docker Desktop), so `--network=host` targets the **VM**, not your Mac. Install podman before step 2:
+> ```bash
+> brew install podman
+> podman machine init
+> podman machine start
+> ```
+
+#### Windows (recommended: WSL2)
+
+Open a **WSL2** terminal (Ubuntu/Debian) and follow the **Linux** instructions above. The launcher scripts (`claude-yolo-automate`, `claude-yolo-py-docker.sh`, …) are bash scripts and need a POSIX environment — either WSL2, Git Bash, or MSYS2.
+
+For native Windows use (running `sandbox daemon` standalone, without the Claude launcher scripts), a `sandbox-windows-x86_64.exe` binary is published on the Releases page:
+
+```powershell
+# PowerShell
+curl.exe -L https://github.com/ZenWayne/ultra-sandbox/releases/latest/download/sandbox-windows-x86_64.exe `
+  -o $env:USERPROFILE\.local\bin\sandbox.exe
+```
+
+Make sure `%USERPROFILE%\.local\bin` is on your `PATH`.
+
+#### Build from source (any platform)
+
+Requires Rust 1.75+:
 
 ```bash
 cd ultra-sandbox/sandbox-rs
 cargo build --release
-install -m 755 target/release/sandbox ~/.local/bin/sandbox
-```
 
-Make sure `~/.local/bin` is on your `PATH`.
+# Linux / macOS
+install -m 755 target/release/sandbox ~/.local/bin/sandbox
+
+# Windows (PowerShell)
+# Copy-Item target\release\sandbox.exe $env:USERPROFILE\.local\bin\sandbox.exe
+```
 
 ### 2. Build the container image (one-time)
 
