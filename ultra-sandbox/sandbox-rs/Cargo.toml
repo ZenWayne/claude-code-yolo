@@ -1,0 +1,29 @@
+[package]
+name = "sandbox"
+version = "0.1.0"
+edition = "2021"
+description = "Sandbox daemon + client: forwards commands from a container to the host via a unix-socket frame protocol."
+
+[[bin]]
+name = "sandbox"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+portable-pty = "0.8"
+crossterm = "0.28"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+signal-hook = "0.3"
+
+[target.'cfg(windows)'.dependencies]
+uds_windows = "1.2"
+ctrlc = "3.4"
+windows-sys = { version = "0.59", features = ["Win32_System_Threading", "Win32_Foundation"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

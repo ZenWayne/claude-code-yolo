@@ -1,101 +1,260 @@
-# Claude Code YOLO
+# Ultra-sandbox
 
-Run Claude Code with all permissions, yet in a secure environment. Let Claude Code fly to the moon.
+> Run Claude Code (or any CLI tool) with `--dangerously-skip-permissions` inside a container, while still using `podman`, `flutter`, `adb`, and other tools **from the host** — transparently.
 
-## Design Highlights
+Ultra-sandbox is a lightweight command-proxy system: a tiny daemon on the host, a frame protocol over a Unix socket, and a drop-in shim that makes container-side commands execute on the host without Docker-in-Docker, SSH tunnels, or privileged containers.
 
-- **On-demand `.venv` isolation**: When a `.venv` is detected, a named volume overlays it inside the container, preventing host/container Python environment conflicts while keeping the host `.venv` untouched. Same approach for Flutter's `build/` and `.dart_tool/`.
-- **Session persistence**: `~/.claude` and `~/.claude.json` are mounted read-write, so auth tokens, session history, and project memory survive across container restarts.
-- **Read-only sensitive mounts**: `~/.ssh` is mounted with `:ro` — Claude can use SSH keys for git operations but cannot modify or delete them.
-- **UID/GID alignment**: `--userns=keep-id` ensures file ownership matches the host, no permission fixups needed.
-- **Zero network config**: `--network=host` reuses the host's proxy, ADB server, and other services directly.
+---
 
-## Directory Structure
+## Architecture
 
 ```
-claude-code-yolo/
-├── python/
-│   ├── claude_code_py.Dockerfile      # Python 3.12 + uv + Claude Code image
-│   └── claude-yolo-py-docker.sh       # Launch script (for Python projects)
-└── flutter/
-    ├── claude_code_flutter.Dockerfile  # Ubuntu 22.04 + Flutter + Android SDK + Claude Code image
-    └── claude-yolo-flutter-docker.sh  # Launch script (for Flutter projects)
+┌────────────────────────────── HOST ──────────────────────────────┐
+│                                                                    │
+│    real podman / flutter / adb / …                                 │
+│               ▲                                                    │
+│               │ fork + exec                                        │
+│               │                                                    │
+│       ┌───────┴─────────┐                                          │
+│       │ sandbox daemon  │   (./sandbox daemon)                     │
+│       └───────┬─────────┘                                          │
+│               │                                                    │
+│               │ frame protocol over Unix socket                    │
+│               │ [1B type][2B len BE][payload]                      │
+│               │ EXEC / STDIN / STDOUT / STDERR /                   │
+│               │ RESIZE / SIGNAL / EXIT                             │
+│               │                                                    │
+│     .ultra_sandbox/                                                │
+│       ├─ daemon.sock        ◄─── bind-mounted into container       │
+│       └─ bin/                                                      │
+│          ├─ podman   ─► #!/bin/sh exec sandbox run podman "$@"     │
+│          ├─ flutter  ─► #!/bin/sh exec sandbox run flutter "$@"    │
+│          └─ adb      ─► #!/bin/sh exec sandbox run adb "$@"        │
+│                                                                    │
+└──────────┬─────────────────────────────────────────────────────────┘
+           │  -v .ultra_sandbox:/ultra_sandbox
+           │  -v ~/.local/bin/sandbox:/usr/local/bin/sandbox:ro
+           │  -e PATH=/ultra_sandbox/bin:$PATH
+           │  -e SANDBOX_DIR=/ultra_sandbox
+           ▼
+┌──────────────────────────── CONTAINER ──────────────────────────┐
+│                                                                   │
+│   Claude Code (--dangerously-skip-permissions)                    │
+│        │                                                          │
+│        │ calls `podman build .`                                   │
+│        ▼                                                          │
+│   /ultra_sandbox/bin/podman   (shim)                              │
+│        │                                                          │
+│        │ execs  sandbox run podman build .                        │
+│        ▼                                                          │
+│   /usr/local/bin/sandbox  (client)                                │
+│        │                                                          │
+│        │ connects to /ultra_sandbox/daemon.sock                   │
+│        │ speaks frame protocol                                    │
+│        ▼                                                          │
+│   → executed on host, output streamed back (full TTY, signals)    │
+│                                                                   │
+└───────────────────────────────────────────────────────────────────┘
 ```
 
-## Python YOLO
+**Key idea.** The container never runs `podman` itself. It runs a 3-line shell shim that hands the command to the `sandbox` client, which forwards it to the host daemon over a Unix socket. stdin/stdout/stderr/TTY-resize/signals are all multiplexed on the same socket via a 3-byte framed protocol, so `podman run -it alpine sh` inside the container gives you a real interactive shell on the host.
 
-For Python projects (e.g., AgentFusion).
+---
 
-### Build Image
+## Quick Start
+
+### 1. Install the `sandbox` binary on the host
+
+**Option A — download a prebuilt release** (recommended):
 
 ```bash
-cd python
-podman build -f claude_code_py.Dockerfile \
+# Pick the right binary for your platform from the Releases page
+curl -L https://github.com/ZenWayne/ultra-sandbox/releases/latest/download/sandbox-linux-x86_64 \
+  -o ~/.local/bin/sandbox
+chmod +x ~/.local/bin/sandbox
+```
+
+**Option B — build from source** (requires Rust 1.75+):
+
+```bash
+cd ultra-sandbox/sandbox-rs
+cargo build --release
+install -m 755 target/release/sandbox ~/.local/bin/sandbox
+```
+
+Make sure `~/.local/bin` is on your `PATH`.
+
+### 2. Build the container image (one-time)
+
+```bash
+cd ultra-sandbox
+podman build -f claude_code_base.Dockerfile \
     --build-arg HOST_USER_UID=$(id -u) \
     --build-arg HOST_USER_GID=$(id -g) \
     --build-arg HOST_USER_NAME=$USER \
-    --build-arg HTTP_PROXY=$HTTP_PROXY \
-    --build-arg HTTPS_PROXY=$HTTPS_PROXY \
-    -t claude_code_py .
+    --build-arg HTTP_PROXY="$HTTP_PROXY" \
+    --build-arg HTTPS_PROXY="$HTTPS_PROXY" \
+    -t claude_code_base .
 ```
 
-### Launch
-
-Run in your Python project root:
+### 3. Launch Claude Code in any project
 
 ```bash
-bash /path/to/claude-code-yolo/python/claude-yolo-py-docker.sh
+cd /path/to/your/project
+
+# Proxy `podman` from container → host, then start Claude Code.
+SANDBOX_MAP_PROCESSES="podman" /path/to/ultra-sandbox/claude-yolo-automate
 ```
 
-**Features:**
-- Auto-handles proxy (127.0.0.1 -> host.docker.internal)
-- When `.venv` is detected, uses a separate volume to avoid host/container environment conflicts
-- Mounts `~/.claude`, `~/.claude.json`, `~/.ssh` (read-only)
-- Uses `uv` for Python dependency management, `UV_VENV_CLEAR=1` ensures a clean environment
-
-## Flutter YOLO
-
-For Flutter projects (e.g., ai_tarot).
-
-### Build Image
+That's it. Inside the container:
 
 ```bash
-cd flutter
-podman build -f claude_code_flutter.Dockerfile \
-    --build-arg HOST_USER_UID=$(id -u) \
-    --build-arg HOST_USER_GID=$(id -g) \
-    --build-arg HOST_USER_NAME=$USER \
-    --build-arg HTTP_PROXY=$HTTP_PROXY \
-    --build-arg HTTPS_PROXY=$HTTPS_PROXY \
-    -t claude_code_flutter .
+> Can you build the Docker image in this repo?
+
+# Claude runs:
+podman build -t myapp .         # ← actually runs on your host
 ```
 
-Image includes: Flutter 3.41.2, Android SDK (compileSdk 36, NDK 28.2.13676358), OpenJDK 17.
+- The daemon is auto-started the first time a launcher runs.
+- `.ultra_sandbox/daemon.sock` lives under `$HOME/.ultra_sandbox/` by default (override with `SANDBOX_DIR`).
+- To proxy more commands, extend the env var: `SANDBOX_MAP_PROCESSES="podman adb flutter"`.
 
-### Launch (with ADB Device Debugging)
+---
 
-First time or after reboot, start ADB server in listen mode on the **host**:
+## Why Ultra-sandbox
+
+| Problem | Traditional fix | Ultra-sandbox fix |
+|---|---|---|
+| Need `podman build` inside container | Docker-in-Docker, privileged container | `sandbox map podman` → transparent proxy |
+| Need host ADB server for physical device | Mount `/dev/bus/usb`, `--privileged` | `sandbox map adb`, `--network=host` |
+| Flutter build pollutes host `build/` dir | Manually clean up | Named volume overlay on `build/` + `.dart_tool/` |
+| Claude Code needs session persistence | Re-login every run | `~/.claude` + `~/.claude.json` mounted r/w |
+| SSH keys for git but don't want container to touch them | Copy keys into image | `~/.ssh` mounted **read-only** |
+| File ownership mismatch (`root` in container, user on host) | `chown -R` after every run | `--userns=keep-id` — host UID/GID preserved |
+| Host proxy config (HTTP_PROXY etc.) | Rebuild image with new proxy | `--network=host` + `replace_proxy()` helper |
+
+---
+
+## Launcher scripts
+
+The repo ships four launchers, each with different tradeoffs:
+
+| Script | Image | Mapped commands | Best for |
+|---|---|---|---|
+| `claude-yolo-automate` | `claude_code_base` | `$SANDBOX_MAP_PROCESSES` (env-driven) | **Any project** — generic, configurable |
+| `claude-yolo-py-docker.sh` | `claude_code_py` | `podman` | Python projects (uv, `.venv` overlay) |
+| `claude-yolo-flutter-docker.sh` | `claude_code_flutter` | `flutter`, `adb`, `podman` | Flutter + Android device debugging |
+| `ultra-sandbox/ultra-sandbox.sh` | `claude_code_base` | — (manual `sandbox map`) | Pure dev shell, no Claude Code |
+
+All four share the same design:
+
+- `--userns=keep-id` — container UID/GID = host UID/GID
+- `--network=host` — reuse host proxies, ADB server, podman daemon
+- Mount `$WORK_DIR:$WORK_DIR` at the **same path** (Claude sees the project at the same absolute path inside and outside)
+- Mount `~/.claude`, `~/.claude.json` r/w — session + auth persistence
+- Mount `~/.ssh` **read-only** — git over SSH works, Claude can't exfiltrate keys
+- Proxy-rewrite helper: `127.0.0.1:10809` → `host.docker.internal:10809`
+
+### Example: generic launcher with custom command set
 
 ```bash
-adb kill-server && adb -a nodaemon server &
+SANDBOX_MAP_PROCESSES="podman adb kubectl" ./claude-yolo-automate
 ```
 
-Then run in your Flutter project root:
+The script will:
+1. Auto-start the sandbox daemon if not running.
+2. Create shims at `$SANDBOX_DIR/bin/{podman,adb,kubectl}`.
+3. Launch `claude_code_base` with `.ultra_sandbox/` mounted and `PATH` set.
 
-```bash
-bash /path/to/claude-code-yolo/flutter/claude-yolo-flutter-docker.sh
+---
+
+## The `sandbox` binary
+
+```
+sandbox daemon [--socket PATH]      start the host daemon
+sandbox run <cmd> [args...]         execute <cmd> via the daemon
+sandbox map <cmd> [--remove]        create/remove a shim in $SANDBOX_DIR/bin/
 ```
 
-The script will auto-build the image if not found.
+**Environment:** `SANDBOX_DIR` (default `.ultra_sandbox`) controls both the socket path (`$SANDBOX_DIR/daemon.sock`) and the shim directory (`$SANDBOX_DIR/bin/`).
 
-**Features:**
-- `--network=host`, container ADB client connects directly to host ADB server (127.0.0.1:5037)
-- Build directory and .dart_tool use separate volumes to avoid host cache pollution
-- Mounts `~/.pub-cache`, `~/.gradle` to share download caches
-- Flutter/Pub uses China mirrors (flutter-io.cn)
+**Cross-platform:** the Rust implementation (`ultra-sandbox/sandbox-rs/`) targets Linux, macOS (x86_64 + arm64), and Windows (via `uds_windows` + ctrlc). CI builds all four in `.github/workflows/build.yml`.
 
-## General Notes
+**Legacy Go implementation:** `ultra-sandbox/sandbox/` contains the original Go version. Wire-compatible with the Rust client/daemon.
 
-- Both scripts launch with `claude --dangerously-skip-permissions`, suitable for CI/automation tasks
-- Containers use host UID/GID (`--userns=keep-id`), file permissions match the host
-- Proxy environment variables (HTTP_PROXY/HTTPS_PROXY, etc.) are automatically passed to the container
+---
+
+## Repository layout
+
+```
+ultra-sandbox/                          # repo root
+├── .github/workflows/build.yml         # cross-platform CI (linux/mac/win)
+├── README.md                           # you are here
+├── CLAUDE.md                           # build-and-run notes for Claude Code
+│
+├── claude-yolo-automate                # generic launcher (env-driven mapping)
+├── claude-yolo-py-docker.sh            # Python project launcher
+├── claude-yolo-flutter-docker.sh       # Flutter project launcher
+│
+└── ultra-sandbox/
+    ├── README.md                       # deeper protocol docs
+    ├── ultra-sandbox.sh                # generic dev-shell launcher (no Claude)
+    ├── claude-yolo-base-docker.sh      # bare Claude Code launcher (no sandbox)
+    ├── claude_code_base.Dockerfile     # debian + Node.js + Claude Code
+    ├── ultra-sandbox.Dockerfile        # debian + dev tooling (generic)
+    │
+    ├── sandbox/                        # original Go implementation
+    │   ├── main.go
+    │   └── go.mod
+    │
+    └── sandbox-rs/                     # Rust port (cross-platform, CI-built)
+        ├── Cargo.toml
+        ├── Cargo.lock
+        └── src/main.rs
+```
+
+---
+
+## Frame protocol (short reference)
+
+```
+frame = | type: u8 | length: u16 BE | payload: [u8; length] |
+```
+
+| Direction | Type | Payload |
+|---|---|---|
+| client → server | `0x01` EXEC | JSON `{cmd, args, cwd, tty, rows, cols}` |
+| client → server | `0x02` STDIN | raw bytes |
+| client → server | `0x03` RESIZE | `rows: u16 BE, cols: u16 BE` |
+| client → server | `0x04` SIGNAL | `sig: u8` |
+| client → server | `0x05` EOF | empty |
+| server → client | `0x11` STDOUT | raw bytes |
+| server → client | `0x12` STDERR | raw bytes |
+| server → client | `0x13` EXIT | `code: i32 BE` |
+
+See `ultra-sandbox/README.md` and `ultra-sandbox/sandbox-rs/src/main.rs` for full details.
+
+---
+
+## Troubleshooting
+
+**`sandbox: cannot connect to daemon at ...`**
+The daemon isn't running. Start it manually: `sandbox daemon &`. The launcher scripts do this automatically.
+
+**`Error: 'sandbox' not found in PATH`**
+You haven't installed the binary to `~/.local/bin/sandbox`. See Quick Start step 1.
+
+**Commands inside the container don't resolve to shims**
+Check `PATH` inside the container — it must begin with `/ultra_sandbox/bin`. Use `echo $PATH` to confirm.
+
+**Proxy not reachable from container**
+If you use a local HTTP proxy on `127.0.0.1:10809`, the launchers automatically rewrite it to `host.docker.internal:10809`. For other ports, edit `replace_proxy()` in the launcher script.
+
+**Claude session not persisted**
+Make sure `~/.claude` and `~/.claude.json` exist on the host before launching. The mounts are r/w, so anything Claude writes there survives container restarts.
+
+---
+
+## License
+
+See `LICENSE`.
