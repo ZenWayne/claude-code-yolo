@@ -10,6 +10,28 @@ Build and install the sandbox binary to `~/.local/bin/sandbox` if missing or out
 cd ultra-sandbox/sandbox-rs && cargo build --release && install -m 755 target/release/sandbox ~/.local/bin/sandbox
 ```
 
+### Static build (for older glibc compatibility)
+
+If you encounter `GLIBC_2.39 not found` errors on older systems, build a static binary using musl:
+
+```bash
+# Install musl target (once)
+rustup target add x86_64-unknown-linux-musl
+
+# Build static binary
+cd ultra-sandbox/sandbox-rs
+cargo build --release --target x86_64-unknown-linux-musl
+
+# Install the static binary
+install -m 755 target/x86_64-unknown-linux-musl/release/sandbox ~/.local/bin/sandbox
+```
+
+For ARM64 systems:
+```bash
+rustup target add aarch64-unknown-linux-musl
+cargo build --release --target aarch64-unknown-linux-musl
+```
+
 Start the daemon on the host before launching any container:
 
 ```bash
