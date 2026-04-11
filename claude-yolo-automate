@@ -43,7 +43,12 @@ if [ -n "$SANDBOX_MAP_PROCESSES" ]; then
     fi
 
     for cmd in $SANDBOX_MAP_PROCESSES; do
-        sandbox map "$cmd"
+        cmd_path=$(command -v "$cmd" 2>/dev/null || true)
+        if [ -n "$cmd_path" ] && [ "$(head -c 2 "$cmd_path" 2>/dev/null)" = '#!' ]; then
+            sandbox map "$cmd" --exec "$cmd_path"
+        else
+            sandbox map "$cmd"
+        fi
     done
 
     echo "=== sandbox mapped: $SANDBOX_MAP_PROCESSES ==="

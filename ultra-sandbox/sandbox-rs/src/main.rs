@@ -8,9 +8,12 @@
 //! commands it receives. The client runs inside the container, speaks the same
 //! frame protocol over the socket, and proxies stdin/stdout/stderr/signals.
 
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::io::{self, Read, Write};
+#[cfg(unix)]
+use std::os::unix::fs::symlink as unix_symlink;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 #[cfg(unix)]
@@ -224,6 +227,27 @@ fn setup_client_signals(writer: SharedWriter, _is_tty: bool) {
 }
 
 // ---------------------------------------------------------------------------
+// Command map (whitelist)
+// ---------------------------------------------------------------------------
+
+fn command_map_path() -> PathBuf {
+    sandbox_dir().join("command-map.json")
+}
+
+fn load_command_map() -> HashMap<String, String> {
+    let data = fs::read(command_map_path()).unwrap_or_default();
+    serde_json::from_slice(&data).unwrap_or_default()
+}
+
+fn save_command_map(map: &HashMap<String, String>) {
+    let json = serde_json::to_vec_pretty(map).expect("serialize command map");
+    if let Err(e) = fs::write(command_map_path(), &json) {
+        eprintln!("sandbox: write command-map.json: {}", e);
+        process::exit(1);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Daemon
 // ---------------------------------------------------------------------------
 
@@ -267,7 +291,7 @@ fn handle_client(mut conn: UnixStream) -> io::Result<()> {
         return Ok(());
     }
 
-    let req: ExecRequest = match serde_json::from_slice(&data) {
+    let mut req: ExecRequest = match serde_json::from_slice(&data) {
         Ok(req) => req,
         Err(_) => {
             let _ = write_frame(&mut conn, FRAME_STDERR, b"sandbox: invalid exec request\n");
@@ -275,6 +299,18 @@ fn handle_client(mut conn: UnixStream) -> io::Result<()> {
             return Ok(());
         }
     };
+
+    // Whitelist check: only mapped commands are allowed.
+    let map = load_command_map();
+    match map.get(&req.cmd) {
+        Some(resolved) => req.cmd = resolved.clone(),
+        None => {
+            let msg = format!("sandbox: '{}' is not a mapped command\n", req.cmd);
+            let _ = write_frame(&mut conn, FRAME_STDERR, msg.as_bytes());
+            let _ = write_frame(&mut conn, FRAME_EXIT, &encode_exit(1));
+            return Ok(());
+        }
+    }
 
     if req.tty {
         handle_pty(conn, req)
@@ -286,8 +322,12 @@ fn handle_client(mut conn: UnixStream) -> io::Result<()> {
 fn handle_pipe(conn: UnixStream, req: ExecRequest) -> io::Result<()> {
     let writer: SharedWriter = Arc::new(Mutex::new(conn.try_clone()?));
 
-    let mut builder = Command::new(&req.cmd);
+    let mut builder = Command::new("/bin/sh");
     builder
+        .arg("-c")
+        .arg("exec \"$@\"")
+        .arg("--")
+        .arg(&req.cmd)
         .args(&req.args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -388,7 +428,11 @@ fn handle_pty(conn: UnixStream, req: ExecRequest) -> io::Result<()> {
         }
     };
 
-    let mut cmd = CommandBuilder::new(&req.cmd);
+    let mut cmd = CommandBuilder::new("/bin/sh");
+    cmd.arg("-c");
+    cmd.arg("exec \"$@\"");
+    cmd.arg("--");
+    cmd.arg(&req.cmd);
     for a in &req.args {
         cmd.arg(a);
     }
@@ -608,49 +652,44 @@ fn run_client(sock_path: &Path, cmd_name: &str, args: Vec<String>) -> ! {
 // Map (shim management)
 // ---------------------------------------------------------------------------
 
-fn shim_filename_and_content(cmd_name: &str) -> (String, String) {
-    #[cfg(unix)]
-    {
-        (
-            cmd_name.to_string(),
-            format!("#!/bin/sh\nexec sandbox run {} \"$@\"\n", cmd_name),
-        )
-    }
-    #[cfg(windows)]
-    {
-        (
-            format!("{}.cmd", cmd_name),
-            format!("@sandbox run {} %*\r\n", cmd_name),
-        )
-    }
-}
-
-fn run_map(bin_dir: &Path, cmd_name: &str, remove: bool) {
-    let (filename, _) = shim_filename_and_content(cmd_name);
-    let shim_path = bin_dir.join(&filename);
+fn run_map(bin_dir: &Path, cmd_name: &str, exec_path: Option<&str>, remove: bool) {
+    let shim_path = bin_dir.join(cmd_name);
+    let mut map = load_command_map();
 
     if remove {
+        map.remove(cmd_name);
         if let Err(e) = fs::remove_file(&shim_path) {
             eprintln!("sandbox map: remove {}: {}", shim_path.display(), e);
             process::exit(1);
         }
+        save_command_map(&map);
         println!("removed shim: {}", shim_path.display());
         return;
     }
 
-    // Skip if shim already exists
-    if shim_path.exists() {
-        println!("mapped (already exists): {} -> sandbox run {}", shim_path.display(), cmd_name);
-        return;
+    let target = exec_path.unwrap_or(cmd_name).to_string();
+
+    // Remove existing shim if present so symlink can be (re)created
+    if shim_path.exists() || shim_path.is_symlink() {
+        let _ = fs::remove_file(&shim_path);
     }
 
-    let (_, content) = shim_filename_and_content(cmd_name);
-    if let Err(e) = fs::write(&shim_path, content.as_bytes()) {
-        eprintln!("sandbox map: write {}: {}", shim_path.display(), e);
+    // Create symlink: alias -> sandbox binary in the same bin dir
+    let sandbox_bin = bin_dir.join("sandbox");
+    #[cfg(unix)]
+    if let Err(e) = unix_symlink(&sandbox_bin, &shim_path) {
+        eprintln!("sandbox map: symlink {}: {}", shim_path.display(), e);
         process::exit(1);
     }
-    set_permissions(&shim_path, 0o755);
-    println!("mapped: {} -> sandbox run {}", shim_path.display(), cmd_name);
+    #[cfg(windows)]
+    {
+        eprintln!("sandbox map: symlinks not supported on Windows");
+        process::exit(1);
+    }
+
+    map.insert(cmd_name.to_string(), target.clone());
+    save_command_map(&map);
+    println!("mapped: {} -> sandbox [resolves to: {}]", shim_path.display(), target);
 }
 
 // ---------------------------------------------------------------------------
@@ -659,12 +698,13 @@ fn run_map(bin_dir: &Path, cmd_name: &str, remove: bool) {
 
 fn usage() -> ! {
     eprintln!("usage:");
-    eprintln!("  sandbox daemon [--socket PATH]     start host daemon");
-    eprintln!("  sandbox run <cmd> [args...]        run command via daemon");
+    eprintln!("  sandbox daemon [--socket PATH]              start host daemon");
+    eprintln!("  sandbox run <cmd> [args...]                 run whitelisted command via daemon");
     eprintln!(
-        "  sandbox map <cmd> [--remove]       create/remove shim in $SANDBOX_BIN_DIR \
-         (default $SANDBOX_DIR/bin)"
+        "  sandbox map <alias> [--exec PATH] [--remove]  create/remove symlink shim in \
+         $SANDBOX_BIN_DIR (default $SANDBOX_DIR/bin)"
     );
+    eprintln!("    --exec PATH  resolve alias to a specific host script/binary path");
     process::exit(1);
 }
 
@@ -705,14 +745,31 @@ fn main() {
         }
         "map" => {
             if args.len() < 3 {
-                eprintln!("usage: sandbox map <cmd> [--remove]");
+                eprintln!("usage: sandbox map <alias> [--exec PATH] [--remove]");
                 process::exit(1);
             }
             let cmd_name = &args[2];
-            let remove = args.len() > 3 && args[3] == "--remove";
+            let mut exec_path: Option<String> = None;
+            let mut remove = false;
+            let mut i = 3usize;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--remove" => remove = true,
+                    "--exec" => {
+                        i += 1;
+                        if i >= args.len() {
+                            eprintln!("sandbox map: --exec requires a path argument");
+                            process::exit(1);
+                        }
+                        exec_path = Some(args[i].clone());
+                    }
+                    _ => {}
+                }
+                i += 1;
+            }
             let bin_dir = shim_bin_dir();
             let _ = fs::create_dir_all(&bin_dir);
-            run_map(&bin_dir, cmd_name, remove);
+            run_map(&bin_dir, cmd_name, exec_path.as_deref(), remove);
         }
         _ => {
             // Symlink-style invocation: argv[0] is the command name.

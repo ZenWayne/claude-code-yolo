@@ -30,7 +30,7 @@ podman run -it --rm \
     -v "$WORK_DIR:$WORK_DIR" \
     -v "$HOME/.ssh":"/home/$USER/.ssh:ro" \
     -v "$SANDBOX_DIR":"/ultra_sandbox" \
-    -v "$SANDBOX_DIR/bin":"/usr/local/bin" \
+    -v "$SANDBOX_DIR/bin":"/usr/local/bin":ro \
     -e LANG="$LANG" \
     -e http_proxy="$(replace_proxy "$http_proxy")" \
     -e https_proxy="$(replace_proxy "$https_proxy")" \

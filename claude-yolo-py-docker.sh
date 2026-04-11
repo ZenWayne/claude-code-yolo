@@ -55,7 +55,7 @@ podman run -it --rm \
     -v "$HOME/.claude.json":"/home/$USER/.claude.json" \
     -v "$HOME/.ssh":"/home/$USER/.ssh:ro" \
     -v "$SANDBOX_DIR":"/ultra_sandbox" \
-    -v "$SANDBOX_DIR/bin":"/usr/local/bin" \
+    -v "$SANDBOX_DIR/bin":"/usr/local/bin":ro \
     -e ANTHROPIC_BASE_URL="$ANTHROPIC_BASE_URL" \
     -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
     -e DISABLE_AUTOUPDATER=1 \

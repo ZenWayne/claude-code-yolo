@@ -72,7 +72,7 @@ podman run -it --rm \
     -v "flutter_build_${WORK_DIR_ESCAPED}:$WORK_DIR/build" \
     -v "flutter_dart_tool_${WORK_DIR_ESCAPED}:$WORK_DIR/.dart_tool" \
     -v "$SANDBOX_DIR":"/ultra_sandbox" \
-    -v "$SANDBOX_DIR/bin":"/usr/local/bin" \
+    -v "$SANDBOX_DIR/bin":"/usr/local/bin":ro \
     -e ANTHROPIC_BASE_URL="$ANTHROPIC_BASE_URL" \
     -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
     -e DISABLE_AUTOUPDATER=1 \
