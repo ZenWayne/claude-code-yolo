@@ -1,12 +1,10 @@
-# Generic base image with only Claude Code
-# Build with:
-# docker build -f claude_code_base.Dockerfile \
-#     --build-arg HOST_USER_UID=$(id -u) \
-#     --build-arg HOST_USER_GID=$(id -g) \
-#     --build-arg HOST_USER_NAME=$USER \
-#     --build-arg HTTP_PROXY=$HTTP_PROXY \
-#     --build-arg HTTPS_PROXY=$HTTPS_PROXY \
-#     -t claude_code_base .
+# Generic base image: Debian + Claude Code (only curl + ca-certificates added).
+#
+# Build (works in bash, cmd, and PowerShell — single line, literal args).
+# HOST_USER_NAME must NOT be `root`; the Dockerfile creates a non-root user
+# with this name.
+#
+# docker build -f claude_code_base.Dockerfile --build-arg HOST_USER_UID=1000 --build-arg HOST_USER_GID=1000 --build-arg HOST_USER_NAME=devuser -t claude_code_base .
 
 FROM debian:bookworm-slim
 
@@ -22,67 +20,32 @@ ENV HTTPS_PROXY=${HTTPS_PROXY}
 ENV http_proxy=${HTTP_PROXY}
 ENV https_proxy=${HTTPS_PROXY}
 
-RUN echo "Host Name is: ${HOST_USER_NAME}"
-RUN echo "Host UID is: ${HOST_USER_UID}"
-RUN echo "Host GID is: ${HOST_USER_GID}"
-
 # Use Aliyun mirror for Debian packages
-# Remove default sources and any files in sources.list.d to ensure only Aliyun is used
 RUN rm -f /etc/apt/sources.list.d/* && \
     echo "deb http://mirrors.aliyun.com/debian/ bookworm main contrib non-free non-free-firmware" > /etc/apt/sources.list && \
     echo "deb http://mirrors.aliyun.com/debian-security/ bookworm-security main contrib non-free non-free-firmware" >> /etc/apt/sources.list && \
     echo "deb http://mirrors.aliyun.com/debian/ bookworm-updates main contrib non-free non-free-firmware" >> /etc/apt/sources.list
 
-# Install basic dependencies including Node.js (required by Claude Code)
+# Minimum deps required by the Claude installer
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git \
-    curl \
-    ca-certificates \
-    locales \
-    openssh-client \
-    # Node.js dependencies
-    gnupg \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
+    curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/* && apt-get clean
 
-# Install Node.js LTS (required by Claude Code)
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y nodejs && \
-    rm -rf /var/lib/apt/lists/*
-
-# Generate en_US.UTF-8 locale
-RUN echo "en_US.UTF-8 UTF-8" > /etc/locale.gen \
-    && locale-gen en_US.UTF-8 \
-    && update-locale LANG=en_US.UTF-8
-
-ENV LANG=en_US.UTF-8
-ENV LC_ALL=en_US.UTF-8
-
-# Create workspace directory with open permissions
-RUN mkdir -p /workspace && chmod 777 /workspace
-
-# Create user inside the container with the host's UID/GID
-# Handle case where GID already exists
+# Create non-root user matching the host UID/GID
 RUN if getent group ${HOST_USER_GID} > /dev/null 2>&1; then \
-        EXISTING_GROUP=$(getent group ${HOST_USER_GID} | cut -d: -f1) && \
         useradd --uid ${HOST_USER_UID} --gid ${HOST_USER_GID} -m -s /bin/bash ${HOST_USER_NAME}; \
     else \
         groupadd --gid ${HOST_USER_GID} ${HOST_USER_NAME} && \
         useradd --uid ${HOST_USER_UID} --gid ${HOST_USER_GID} -m -s /bin/bash ${HOST_USER_NAME}; \
     fi
 
-# Create .local/bin directory for the user
-RUN mkdir -p /home/${HOST_USER_NAME}/.local/bin && chown -R ${HOST_USER_NAME}:${HOST_USER_GID} /home/${HOST_USER_NAME}/.local
+RUN mkdir -p /workspace && chown ${HOST_USER_NAME}:${HOST_USER_GID} /workspace
 
-# Switch to user for installing Claude Code
 USER ${HOST_USER_NAME}
+ENV PATH="/home/${HOST_USER_NAME}/.local/bin:${PATH}"
 
-# Install Claude Code using local installer
-COPY --chown=${HOST_USER_NAME}:${HOST_USER_GID} install.sh /tmp/install.sh
+# Install Claude Code (native binary into ~/.local/bin)
 RUN curl -fsSL https://claude.ai/install.sh | bash
 
-# Set working directory
 WORKDIR /workspace
-
-# Default command (runs as user)
 CMD ["claude"]

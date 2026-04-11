@@ -1,12 +1,11 @@
 # Ultra Sandbox - Generic containerized development environment
-# Build with:
-# docker build -f ultra-sandbox.Dockerfile \
-#     --build-arg HOST_USER_UID=$(id -u) \
-#     --build-arg HOST_USER_GID=$(id -g) \
-#     --build-arg HOST_USER_NAME=$USER \
-#     --build-arg HTTP_PROXY=$HTTP_PROXY \
-#     --build-arg HTTPS_PROXY=$HTTPS_PROXY \
-#     -t ultra-sandbox .
+#
+# Build (works in bash, cmd, and PowerShell — single line, literal args).
+# HOST_USER_NAME must NOT be `root`; the Dockerfile creates a non-root user
+# with this name. Set HTTP_PROXY / HTTPS_PROXY in your environment first if
+# you need them, or append `--build-arg HTTP_PROXY=... --build-arg HTTPS_PROXY=...`.
+#
+# docker build -f ultra-sandbox.Dockerfile --build-arg HOST_USER_UID=1000 --build-arg HOST_USER_GID=1000 --build-arg HOST_USER_NAME=devuser -t ultra-sandbox .
 
 FROM debian:bookworm-slim
 
