@@ -15,9 +15,15 @@ replace_proxy() {
 WORK_DIR=$(pwd)
 export SANDBOX_DIR="${SANDBOX_DIR:-$WORK_DIR/.ultra_sandbox}"
 
-# Cleanup function - remove sandbox dir on exit
+# Reference-counted cleanup - only remove sandbox dir when last instance exits
+mkdir -p "$SANDBOX_DIR"
+echo $$ >> "$SANDBOX_DIR/pids"
+
 cleanup() {
-    rm -rf "$SANDBOX_DIR"
+    sed -i "/^$$\$/d" "$SANDBOX_DIR/pids" 2>/dev/null
+    if [ ! -s "$SANDBOX_DIR/pids" ]; then
+        rm -rf "$SANDBOX_DIR"
+    fi
 }
 trap cleanup EXIT
 
@@ -45,13 +51,9 @@ fi
 
 # --- Launch container --------------------------------------------------------
 WORK_DIR=$(pwd)
-VOLUME_NAME="claude-yolo-$(echo "$WORK_DIR" | sed 's/[^a-zA-Z0-9]/_/g' | tr '[:upper:]' '[:lower:]')"
+
+
 VOLUME_ARGS=(-v "$WORK_DIR:$WORK_DIR")
-
-if [ -d ".venv" ]; then
-    VOLUME_ARGS+=(-v "${VOLUME_NAME}_venv:$WORK_DIR/.venv")
-fi
-
 SANDBOX_VOLUME_ARGS=()
 SANDBOX_ENV_ARGS=()
 if [ -n "$SANDBOX_MAP_PROCESSES" ]; then

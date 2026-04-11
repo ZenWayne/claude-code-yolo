@@ -27,6 +27,7 @@ fi
 
 # --- Ensure daemon is running ------------------------------------------------
 mkdir -p "$SANDBOX_DIR/bin"
+cp "$(command -v sandbox)" "$SANDBOX_DIR/bin/sandbox"
 if [ ! -S "$SANDBOX_DIR/daemon.sock" ]; then
     echo "Starting sandbox daemon..."
     sandbox daemon &
@@ -71,7 +72,7 @@ podman run -it --rm \
     -v "flutter_build_${WORK_DIR_ESCAPED}:$WORK_DIR/build" \
     -v "flutter_dart_tool_${WORK_DIR_ESCAPED}:$WORK_DIR/.dart_tool" \
     -v "$SANDBOX_DIR":"/ultra_sandbox" \
-    -v "$HOME/.local/bin/sandbox":"/usr/local/bin/sandbox:ro" \
+    -v "$SANDBOX_DIR/bin":"/usr/local/bin" \
     -e ANTHROPIC_BASE_URL="$ANTHROPIC_BASE_URL" \
     -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
     -e DISABLE_AUTOUPDATER=1 \
@@ -87,7 +88,7 @@ podman run -it --rm \
     -e no_proxy="$no_proxy" \
     -e TERM=xterm-256color \
     -e HOME="/home/$USER" \
-    -e PATH="/ultra_sandbox/bin:/opt/flutter/bin:/opt/android-sdk/platform-tools:/opt/android-sdk/cmdline-tools/latest/bin:/usr/local/bin:/usr/bin:/bin" \
+    -e PATH="/opt/flutter/bin:/opt/android-sdk/platform-tools:/opt/android-sdk/cmdline-tools/latest/bin:/usr/local/bin:/usr/bin:/bin" \
     -w "$WORK_DIR" \
     "$IMAGE" \
     claude --dangerously-skip-permissions "$@"

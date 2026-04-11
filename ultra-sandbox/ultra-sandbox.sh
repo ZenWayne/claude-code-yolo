@@ -14,6 +14,7 @@ replace_proxy() {
 WORK_DIR=$(pwd)
 SANDBOX_DIR="$WORK_DIR/.ultra_sandbox"
 mkdir -p "$SANDBOX_DIR/bin"
+cp "$(command -v sandbox)" "$SANDBOX_DIR/bin/sandbox"
 
 # Cleanup function - remove mapped bins on exit
 cleanup() {
@@ -29,13 +30,13 @@ podman run -it --rm \
     -v "$WORK_DIR:$WORK_DIR" \
     -v "$HOME/.ssh":"/home/$USER/.ssh:ro" \
     -v "$SANDBOX_DIR":"/ultra_sandbox" \
-    -v "$HOME/.local/bin/sandbox":"/usr/local/bin/sandbox:ro" \
+    -v "$SANDBOX_DIR/bin":"/usr/local/bin" \
     -e LANG="$LANG" \
     -e http_proxy="$(replace_proxy "$http_proxy")" \
     -e https_proxy="$(replace_proxy "$https_proxy")" \
     -e HTTP_PROXY="$(replace_proxy "$HTTP_PROXY")" \
     -e HTTPS_PROXY="$(replace_proxy "$HTTPS_PROXY")" \
-    -e PATH="/ultra_sandbox/bin:/home/$USER/.local/bin:/usr/local/bin:/usr/bin:/bin" \
+    -e PATH="/home/$USER/.local/bin:/usr/local/bin:/usr/bin:/bin" \
     -e SANDBOX_DIR="/ultra_sandbox" \
     -e NO_PROXY="$NO_PROXY" \
     -e no_proxy="$no_proxy" \
