@@ -717,6 +717,14 @@ fn self_name(argv0: &str) -> String {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
+
+    // Symlink-style invocation must be checked before the arg-count guard,
+    // because `podman` (symlink → sandbox) called with no args has len == 1.
+    let name = self_name(&args[0]);
+    if name != "sandbox" && !name.is_empty() {
+        run_client(&socket_path(), &name, args[1..].to_vec());
+    }
+
     if args.len() < 2 {
         usage();
     }
@@ -772,11 +780,6 @@ fn main() {
             run_map(&bin_dir, cmd_name, exec_path.as_deref(), remove);
         }
         _ => {
-            // Symlink-style invocation: argv[0] is the command name.
-            let name = self_name(&args[0]);
-            if name != "sandbox" && !name.is_empty() {
-                run_client(&socket_path(), &name, args[1..].to_vec());
-            }
             usage();
         }
     }
