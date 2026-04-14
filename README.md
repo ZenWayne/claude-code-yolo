@@ -2,6 +2,8 @@
 
 > Run Claude Code (or any CLI tool) with `--dangerously-skip-permissions` inside a container, while still using `podman`, `flutter`, `adb`, and other tools **from the host** — transparently.
 
+**Language**: English | [简体中文](README.zh-CN.md)
+
 Ultra-sandbox is a lightweight command-proxy system: a tiny daemon on the host, a frame protocol over a Unix socket, and a drop-in shim that makes container-side commands execute on the host without Docker-in-Docker, SSH tunnels, or privileged containers.
 
 ---
