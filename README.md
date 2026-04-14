@@ -67,86 +67,62 @@ Ultra-sandbox is a lightweight command-proxy system: a tiny daemon on the host, 
 
 ## Quick Start
 
-### 1. Install the `sandbox` binary on the host
+### Prerequisites
 
-Download a prebuilt release for your platform, or build from source.
+- **`podman`** on the host. macOS/Windows users must also run `podman machine init && podman machine start` first (containers run inside a Linux VM — `--network=host` targets the VM, not your host OS).
+- On macOS: `brew install podman`. On Windows: install [Podman Desktop](https://podman-desktop.io/).
+- `~/.local/bin` (Linux/macOS) or `%USERPROFILE%\.local\bin` (Windows) on your `PATH`.
 
-#### Linux (x86_64)
+### 1. Run the installer
 
+Clone the repo and run the platform-appropriate installer — it does everything in one step: downloads the `sandbox` release, builds the `claude_code_base` image, and drops `claude-yolo-automate` onto `$PATH`.
+
+**Linux / macOS / WSL2:**
 ```bash
-curl -L https://github.com/ZenWayne/ultra-sandbox/releases/latest/download/sandbox-linux-x86_64 \
-  -o ~/.local/bin/sandbox
-chmod +x ~/.local/bin/sandbox
+git clone https://github.com/ZenWayne/ultra-sandbox.git
+cd ultra-sandbox
+./install.sh
 ```
 
-Make sure `~/.local/bin` is on your `PATH`.
-
-#### macOS (Apple Silicon)
-
-```bash
-curl -L https://github.com/ZenWayne/ultra-sandbox/releases/latest/download/sandbox-darwin-arm64 \
-  -o ~/.local/bin/sandbox
-chmod +x ~/.local/bin/sandbox
-```
-
-> Intel Macs are not covered by prebuilt releases (GitHub's `macos-13` x86_64 runner is being phased out). Build from source — see below.
-
-> macOS runs containers inside a Linux VM (via `podman machine` or Docker Desktop), so `--network=host` targets the **VM**, not your Mac. Install podman before step 2:
-> ```bash
-> brew install podman
-> podman machine init
-> podman machine start
-> ```
-
-#### Windows (recommended: WSL2)
-
-Open a **WSL2** terminal (Ubuntu/Debian) and follow the **Linux** instructions above. The launcher scripts (`claude-yolo-automate`, `claude-yolo-py-docker.sh`, …) are bash scripts and need a POSIX environment — either WSL2, Git Bash, or MSYS2.
-
-For native Windows use (running `sandbox daemon` standalone, without the Claude launcher scripts), a `sandbox-windows-x86_64.exe` binary is published on the Releases page:
-
+**Windows (native, PowerShell):**
 ```powershell
-# PowerShell
-curl.exe -L https://github.com/ZenWayne/ultra-sandbox/releases/latest/download/sandbox-windows-x86_64.exe `
-  -o $env:USERPROFILE\.local\bin\sandbox.exe
+git clone https://github.com/ZenWayne/ultra-sandbox.git
+cd ultra-sandbox
+.\install.ps1
 ```
 
-Make sure `%USERPROFILE%\.local\bin` is on your `PATH`.
+> `claude-yolo-automate` is a bash script. On native Windows, run it from Git Bash, MSYS2, or WSL2 — or just use `install.sh` inside WSL2 for a fully-bash flow.
 
-#### Build from source (any platform)
+**Env overrides (both installers):**
 
-Requires Rust 1.75+:
+| Variable | Default | Purpose |
+|---|---|---|
+| `INSTALL_DIR` | `~/.local/bin` / `%USERPROFILE%\.local\bin` | Where to drop `sandbox` + launcher |
+| `REPO` | `ZenWayne/ultra-sandbox` | GitHub repo to pull release from |
+| `RELEASE_TAG` | `latest` | Release tag |
+| `IMAGE_TAG` | `claude_code_base` | Podman image tag |
+| `SKIP_SANDBOX` | — | `=1` to skip binary download |
+| `SKIP_IMAGE` | — | `=1` to skip image build |
+| `SKIP_LAUNCHER` | — | `=1` to skip launcher install |
+
+**Build from source** (Intel Mac, other arches, or if you'd rather not use a prebuilt release):
 
 ```bash
 cd ultra-sandbox/sandbox-rs
 cargo build --release
-
-# Linux / macOS
-install -m 755 target/release/sandbox ~/.local/bin/sandbox
-
-# Windows (PowerShell)
-# Copy-Item target\release\sandbox.exe $env:USERPROFILE\.local\bin\sandbox.exe
+install -m 755 target/release/sandbox ~/.local/bin/sandbox   # Linux/macOS
+# Windows: Copy-Item target\release\sandbox.exe $env:USERPROFILE\.local\bin\sandbox.exe
 ```
 
-### 2. Build the container image (one-time)
+Then re-run the installer with `SKIP_SANDBOX=1` to just build the image and install the launcher.
 
-```bash
-cd ultra-sandbox
-podman build -f claude_code_base.Dockerfile \
-    --build-arg HOST_USER_UID=$(id -u) \
-    --build-arg HOST_USER_GID=$(id -g) \
-    --build-arg HOST_USER_NAME=$USER \
-    --build-arg HTTP_PROXY="$HTTP_PROXY" \
-    --build-arg HTTPS_PROXY="$HTTPS_PROXY" \
-    -t claude_code_base .
-```
-
-### 3. Launch Claude Code in any project
+### 2. Launch Claude Code in any project
 
 ```bash
 cd /path/to/your/project
 
-# Proxy `podman` from container → host, then start Claude Code.
-SANDBOX_MAP_PROCESSES="podman" /path/to/ultra-sandbox/claude-yolo-automate
+# Proxy `python` from container → host, then start Claude Code.
+SANDBOX_MAP_PROCESSES="python" claude-yolo-automate
 ```
 
 That's it. Inside the container:
@@ -180,16 +156,14 @@ podman build -t myapp .         # ← actually runs on your host
 
 ## Launcher scripts
 
-The repo ships four launchers, each with different tradeoffs:
+The repo ships two launchers:
 
 | Script | Image | Mapped commands | Best for |
 |---|---|---|---|
 | `claude-yolo-automate` | `claude_code_base` | `$SANDBOX_MAP_PROCESSES` (env-driven) | **Any project** — generic, configurable |
-| `claude-yolo-py-docker.sh` | `claude_code_py` | `podman` | Python projects (uv, `.venv` overlay) |
-| `claude-yolo-flutter-docker.sh` | `claude_code_flutter` | `flutter`, `adb`, `podman` | Flutter + Android device debugging |
 | `ultra-sandbox/ultra-sandbox.sh` | `claude_code_base` | — (manual `sandbox map`) | Pure dev shell, no Claude Code |
 
-All four share the same design:
+Both share the same design:
 
 - `--userns=keep-id` — container UID/GID = host UID/GID
 - `--network=host` — reuse host proxies, ADB server, podman daemon
@@ -267,8 +241,8 @@ ultra-sandbox/                          # repo root
 ├── CLAUDE.md                           # build-and-run notes for Claude Code
 │
 ├── claude-yolo-automate                # generic launcher (env-driven mapping)
-├── claude-yolo-py-docker.sh            # Python project launcher
-├── claude-yolo-flutter-docker.sh       # Flutter project launcher
+├── install.sh                          # one-shot installer (Linux/macOS/WSL2)
+├── install.ps1                         # one-shot installer (Windows / PowerShell)
 ├── update-pencil-mcp                   # dynamic resolver for Pencil's rotating MCP path
 │
 └── ultra-sandbox/

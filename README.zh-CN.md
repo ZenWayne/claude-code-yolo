@@ -67,86 +67,62 @@ Ultra-sandbox 是一套轻量的命令代理系统：宿主机上运行一个微
 
 ## 快速开始
 
-### 1. 在宿主机上安装 `sandbox` 二进制
+### 前置条件
 
-可以下载对应平台的预编译版本,也可以自行从源码构建。
+- 宿主机上已安装 **`podman`**。macOS/Windows 用户还需先执行 `podman machine init && podman machine start`(容器跑在 Linux 虚拟机中——`--network=host` 指向的是虚拟机而非你的宿主机)。
+- macOS: `brew install podman`。Windows: 安装 [Podman Desktop](https://podman-desktop.io/)。
+- 把 `~/.local/bin`(Linux/macOS)或 `%USERPROFILE%\.local\bin`(Windows)加入 `PATH`。
 
-#### Linux (x86_64)
+### 1. 运行安装脚本
 
+克隆仓库后执行对应平台的安装脚本——它会一键完成所有事情:拉取 `sandbox` release、构建 `claude_code_base` 镜像、把 `claude-yolo-automate` 放到 `$PATH`。
+
+**Linux / macOS / WSL2:**
 ```bash
-curl -L https://github.com/ZenWayne/ultra-sandbox/releases/latest/download/sandbox-linux-x86_64 \
-  -o ~/.local/bin/sandbox
-chmod +x ~/.local/bin/sandbox
+git clone https://github.com/ZenWayne/ultra-sandbox.git
+cd ultra-sandbox
+./install.sh
 ```
 
-确保 `~/.local/bin` 在 `PATH` 中。
-
-#### macOS (Apple Silicon)
-
-```bash
-curl -L https://github.com/ZenWayne/ultra-sandbox/releases/latest/download/sandbox-darwin-arm64 \
-  -o ~/.local/bin/sandbox
-chmod +x ~/.local/bin/sandbox
-```
-
-> Intel Mac 未提供预编译版本(GitHub 的 `macos-13` x86_64 runner 正在淘汰)。请从源码构建——见下方说明。
-
-> macOS 在 Linux 虚拟机中运行容器(通过 `podman machine` 或 Docker Desktop),所以 `--network=host` 指向的是**虚拟机**而不是你的 Mac 本机。执行第 2 步前需先安装 podman:
-> ```bash
-> brew install podman
-> podman machine init
-> podman machine start
-> ```
-
-#### Windows (推荐使用 WSL2)
-
-打开一个 **WSL2** 终端(Ubuntu/Debian),按照上方的 **Linux** 步骤操作。启动脚本(`claude-yolo-automate`、`claude-yolo-py-docker.sh` 等)都是 bash 脚本,需要 POSIX 环境——可选 WSL2、Git Bash 或 MSYS2。
-
-如果要在原生 Windows 上使用(不借助 Claude 启动脚本,仅独立运行 `sandbox daemon`),Releases 页面提供了 `sandbox-windows-x86_64.exe`:
-
+**Windows(原生,PowerShell):**
 ```powershell
-# PowerShell
-curl.exe -L https://github.com/ZenWayne/ultra-sandbox/releases/latest/download/sandbox-windows-x86_64.exe `
-  -o $env:USERPROFILE\.local\bin\sandbox.exe
+git clone https://github.com/ZenWayne/ultra-sandbox.git
+cd ultra-sandbox
+.\install.ps1
 ```
 
-确保 `%USERPROFILE%\.local\bin` 在 `PATH` 中。
+> `claude-yolo-automate` 是 bash 脚本。在原生 Windows 上要通过 Git Bash、MSYS2 或 WSL2 运行——或者直接在 WSL2 里用 `install.sh` 获得纯 bash 流程。
 
-#### 从源码构建(任意平台)
+**环境变量(两个安装脚本通用):**
 
-需要 Rust 1.75+:
+| 变量 | 默认值 | 用途 |
+|---|---|---|
+| `INSTALL_DIR` | `~/.local/bin` / `%USERPROFILE%\.local\bin` | `sandbox` 和 launcher 的安装位置 |
+| `REPO` | `ZenWayne/ultra-sandbox` | GitHub 仓库 |
+| `RELEASE_TAG` | `latest` | Release 标签 |
+| `IMAGE_TAG` | `claude_code_base` | Podman 镜像名 |
+| `SKIP_SANDBOX` | — | `=1` 跳过二进制下载 |
+| `SKIP_IMAGE` | — | `=1` 跳过镜像构建 |
+| `SKIP_LAUNCHER` | — | `=1` 跳过 launcher 安装 |
+
+**从源码构建**(Intel Mac、其他架构,或不想用预编译版本):
 
 ```bash
 cd ultra-sandbox/sandbox-rs
 cargo build --release
-
-# Linux / macOS
-install -m 755 target/release/sandbox ~/.local/bin/sandbox
-
-# Windows (PowerShell)
-# Copy-Item target\release\sandbox.exe $env:USERPROFILE\.local\bin\sandbox.exe
+install -m 755 target/release/sandbox ~/.local/bin/sandbox   # Linux/macOS
+# Windows: Copy-Item target\release\sandbox.exe $env:USERPROFILE\.local\bin\sandbox.exe
 ```
 
-### 2. 构建容器镜像(一次性)
+然后带 `SKIP_SANDBOX=1` 重跑安装脚本,只做镜像构建和 launcher 安装。
 
-```bash
-cd ultra-sandbox
-podman build -f claude_code_base.Dockerfile \
-    --build-arg HOST_USER_UID=$(id -u) \
-    --build-arg HOST_USER_GID=$(id -g) \
-    --build-arg HOST_USER_NAME=$USER \
-    --build-arg HTTP_PROXY="$HTTP_PROXY" \
-    --build-arg HTTPS_PROXY="$HTTPS_PROXY" \
-    -t claude_code_base .
-```
-
-### 3. 在任意项目中启动 Claude Code
+### 2. 在任意项目中启动 Claude Code
 
 ```bash
 cd /path/to/your/project
 
-# 将 `podman` 从容器代理到宿主机,然后启动 Claude Code。
-SANDBOX_MAP_PROCESSES="podman" /path/to/ultra-sandbox/claude-yolo-automate
+# 将 `python` 从容器代理到宿主机,然后启动 Claude Code。
+SANDBOX_MAP_PROCESSES="python" claude-yolo-automate
 ```
 
 完成。进入容器后:
@@ -180,16 +156,14 @@ podman build -t myapp .         # ← 实际在宿主机上运行
 
 ## 启动脚本
 
-仓库提供四个启动脚本,各有侧重:
+仓库提供两个启动脚本:
 
 | 脚本 | 镜像 | 映射的命令 | 适用场景 |
 |---|---|---|---|
 | `claude-yolo-automate` | `claude_code_base` | `$SANDBOX_MAP_PROCESSES`(通过环境变量) | **任意项目**——通用、可配置 |
-| `claude-yolo-py-docker.sh` | `claude_code_py` | `podman` | Python 项目(uv、`.venv` 叠加) |
-| `claude-yolo-flutter-docker.sh` | `claude_code_flutter` | `flutter`、`adb`、`podman` | Flutter + Android 设备调试 |
 | `ultra-sandbox/ultra-sandbox.sh` | `claude_code_base` | —(手动 `sandbox map`) | 纯开发 shell,不带 Claude Code |
 
-四者共享同一套设计:
+两者共享同一套设计:
 
 - `--userns=keep-id` —— 容器内 UID/GID = 宿主机 UID/GID
 - `--network=host` —— 复用宿主机的代理、ADB server、podman daemon
@@ -268,8 +242,8 @@ ultra-sandbox/                          # 仓库根目录
 ├── CLAUDE.md                           # 面向 Claude Code 的构建/运行说明
 │
 ├── claude-yolo-automate                # 通用启动脚本(环境变量驱动映射)
-├── claude-yolo-py-docker.sh            # Python 项目启动脚本
-├── claude-yolo-flutter-docker.sh       # Flutter 项目启动脚本
+├── install.sh                          # 一键安装脚本(Linux/macOS/WSL2)
+├── install.ps1                         # 一键安装脚本(Windows / PowerShell)
 ├── update-pencil-mcp                   # Pencil MCP 路径的动态解析器
 │
 └── ultra-sandbox/
