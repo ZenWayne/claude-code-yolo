@@ -1,6 +1,6 @@
 # claude-code-yolo
 
-Containerized Claude Code environments using Docker (or Podman) with sandbox command proxying.
+Containerized Claude Code environments using Docker with sandbox command proxying.
 
 ## sandbox setup
 
@@ -47,10 +47,9 @@ sandbox map adb
 sandbox map flutter
 ```
 
-Then launch the container via the appropriate script:
+Then launch the container:
 
 ```bash
-bash flutter/sandbox-flutter.sh        # Flutter projects
-bash python/sandbox-python.sh          # Python projects
-bash ultra-sandbox/ultra-sandbox.sh    # Generic environment
+claude-yolo-automate                   # Claude Code in any project
+bash ultra-sandbox/ultra-sandbox.sh    # Generic dev shell, no Claude
 ```

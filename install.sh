@@ -2,7 +2,7 @@
 # Ultra-sandbox installer.
 #
 # 1. Downloads the `sandbox` binary from the latest GitHub release.
-# 2. Builds the `claude_code_base` podman image.
+# 2. Builds the `claude_code_base` docker image.
 # 3. Installs `claude-yolo-automate` onto $PATH.
 #
 # Env overrides:

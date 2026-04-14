@@ -1,7 +1,7 @@
 # Ultra-sandbox installer for Windows (PowerShell).
 #
 # 1. Downloads sandbox.exe from the latest GitHub release.
-# 2. Builds the claude_code_base podman image.
+# 2. Builds the claude_code_base docker image.
 # 3. Installs claude-yolo-automate onto $env:Path.
 #
 # Run from the repo root:
@@ -11,7 +11,7 @@
 #   $env:INSTALL_DIR      Install destination (default: $env:USERPROFILE\.local\bin)
 #   $env:REPO             GitHub repo (default: ZenWayne/ultra-sandbox)
 #   $env:RELEASE_TAG      Release tag (default: latest)
-#   $env:IMAGE_TAG        Podman image tag (default: claude_code_base)
+#   $env:IMAGE_TAG        Docker image tag (default: claude_code_base)
 #   $env:SKIP_SANDBOX     =1 to skip binary download
 #   $env:SKIP_IMAGE       =1 to skip image build
 #   $env:SKIP_LAUNCHER    =1 to skip launcher install
