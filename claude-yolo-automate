@@ -59,6 +59,21 @@ fi
 # --- Launch container --------------------------------------------------------
 WORK_DIR=$(pwd)
 
+# Detect container engine. Podman gets --userns=keep-id for UID mapping;
+# Docker has no equivalent, so fall back to --user $(id -u):$(id -g)
+# (relies on the image being built with matching HOST_USER_UID/GID).
+if command -v podman &>/dev/null; then
+    ENGINE=podman
+    USER_ARGS=(--userns=keep-id)
+    IMAGE=localhost/claude_code_base:latest
+elif command -v docker &>/dev/null; then
+    ENGINE=docker
+    USER_ARGS=(--user "$(id -u):$(id -g)")
+    IMAGE=claude_code_base:latest
+else
+    echo "Error: need 'podman' or 'docker' on PATH" >&2
+    exit 1
+fi
 
 VOLUME_ARGS=(-v "$WORK_DIR:$WORK_DIR")
 SANDBOX_VOLUME_ARGS=()
@@ -78,8 +93,8 @@ else
     )
 fi
 
-podman run -it --rm \
-    --userns=keep-id \
+"$ENGINE" run -it --rm \
+    "${USER_ARGS[@]}" \
     --network=host \
     "${VOLUME_ARGS[@]}" \
     "${SANDBOX_VOLUME_ARGS[@]}" \
@@ -102,5 +117,5 @@ podman run -it --rm \
     "${SANDBOX_ENV_ARGS[@]}" \
     -w "$WORK_DIR" \
     --entrypoint /home/$USER/.local/bin/claude \
-    localhost/claude_code_base:latest \
+    "$IMAGE" \
     --dangerously-skip-permissions "$@"
