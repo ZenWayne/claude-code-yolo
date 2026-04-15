@@ -38,10 +38,24 @@ if [ -n "$SANDBOX_MAP_PROCESSES" ]; then
     # Shims are symlinks to $SANDBOX_DIR/bin/sandbox, so the binary must live here.
     cp -u "$(command -v sandbox)" "$SANDBOX_DIR/bin/sandbox"
 
-    if [ ! -S "$SANDBOX_DIR/daemon.sock" ]; then
+    # Ensure daemon is actually listening (socket file may be stale)
+    daemon_listening() {
+        if command -v ss >/dev/null 2>&1; then
+            ss -xln 2>/dev/null | grep -qF "$SANDBOX_DIR/daemon.sock"
+        elif command -v netstat >/dev/null 2>&1; then
+            netstat -lx 2>/dev/null | grep -qF "$SANDBOX_DIR/daemon.sock"
+        else
+            pgrep -f "sandbox daemon" >/dev/null 2>&1
+        fi
+    }
+
+    if [ -S "$SANDBOX_DIR/daemon.sock" ] && daemon_listening; then
+        :
+    else
+        rm -f "$SANDBOX_DIR/daemon.sock"
         echo "Starting sandbox daemon..."
         sandbox daemon &
-        sleep 0.3
+        sleep 0.5
     fi
 
     for cmd in $SANDBOX_MAP_PROCESSES; do
