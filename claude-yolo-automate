@@ -38,24 +38,19 @@ if [ -n "$SANDBOX_MAP_PROCESSES" ]; then
     # Shims are symlinks to $SANDBOX_DIR/bin/sandbox, so the binary must live here.
     cp -u "$(command -v sandbox)" "$SANDBOX_DIR/bin/sandbox"
 
-    # Ensure daemon is actually listening (socket file may be stale)
-    daemon_listening() {
-        if command -v ss >/dev/null 2>&1; then
-            ss -xln 2>/dev/null | grep -qF "$SANDBOX_DIR/daemon.sock"
-        elif command -v netstat >/dev/null 2>&1; then
-            netstat -lx 2>/dev/null | grep -qF "$SANDBOX_DIR/daemon.sock"
-        else
-            pgrep -f "sandbox daemon" >/dev/null 2>&1
-        fi
-    }
-
-    if [ -S "$SANDBOX_DIR/daemon.sock" ] && daemon_listening; then
-        :
-    else
-        rm -f "$SANDBOX_DIR/daemon.sock"
+    # Probe the incumbent daemon (if any). `daemon-check` PINGs the socket and
+    # verifies the responder reports our SANDBOX_DIR — this catches stale
+    # daemons whose cwd/SANDBOX_DIR has been deleted or moved, which the old
+    # ss-string-match check happily trusted. If the probe fails, start a new
+    # daemon; it self-evicts any incumbent at the same socket path.
+    if ! sandbox daemon-check >/dev/null 2>&1; then
         echo "Starting sandbox daemon..."
-        sandbox daemon &
-        sleep 0.5
+        nohup sandbox daemon >/dev/null 2>&1 &
+        disown
+        for _ in 1 2 3 4 5 6 7 8 9 10; do
+            sleep 0.1
+            sandbox daemon-check >/dev/null 2>&1 && break
+        done
     fi
 
     for cmd in $SANDBOX_MAP_PROCESSES; do

@@ -43,11 +43,13 @@ const FRAME_STDIN: u8 = 0x02;
 const FRAME_RESIZE: u8 = 0x03;
 const FRAME_SIGNAL: u8 = 0x04;
 const FRAME_EOF: u8 = 0x05;
+const FRAME_PING: u8 = 0x06;
 
 // server -> client
 const FRAME_STDOUT: u8 = 0x11;
 const FRAME_STDERR: u8 = 0x12;
 const FRAME_EXIT: u8 = 0x13;
+const FRAME_PONG: u8 = 0x14;
 
 const IO_BUF: usize = 32 * 1024;
 
@@ -145,6 +147,57 @@ fn signal_process(pid: u32, sig: u8) {
         libc::kill(pid as i32, sig as i32);
     }
 }
+
+// Find any process listening at `sock_path` (via SO_PEERCRED on a fresh
+// connection) and SIGTERM/SIGKILL it. Used by `run_daemon` so that a stale
+// daemon — possibly serving a deleted SANDBOX_DIR — does not silently keep
+// answering after a fresh launch unlinks-and-rebinds the same path.
+#[cfg(target_os = "linux")]
+fn evict_listener_at(sock_path: &Path) {
+    use std::os::unix::io::AsRawFd;
+    use std::time::Duration;
+
+    let stream = match UnixStream::connect(sock_path) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    let mut cred: libc::ucred = unsafe { std::mem::zeroed() };
+    let mut len: libc::socklen_t = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
+    let ret = unsafe {
+        libc::getsockopt(
+            stream.as_raw_fd(),
+            libc::SOL_SOCKET,
+            libc::SO_PEERCRED,
+            &mut cred as *mut libc::ucred as *mut libc::c_void,
+            &mut len,
+        )
+    };
+    drop(stream);
+    if ret != 0 || cred.pid <= 0 {
+        return;
+    }
+    let pid = cred.pid;
+    eprintln!("sandbox daemon: evicting incumbent pid={}", pid);
+    unsafe { libc::kill(pid, libc::SIGTERM) };
+    for _ in 0..20 {
+        thread::sleep(Duration::from_millis(50));
+        if unsafe { libc::kill(pid, 0) } != 0 {
+            return;
+        }
+    }
+    eprintln!("sandbox daemon: pid={} ignored SIGTERM, sending SIGKILL", pid);
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+    thread::sleep(Duration::from_millis(100));
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+fn evict_listener_at(_sock_path: &Path) {
+    // SO_PEERCRED is Linux-specific; on other unices fall back to plain
+    // unlink-and-bind (the historical behavior).
+}
+
+#[cfg(windows)]
+fn evict_listener_at(_sock_path: &Path) {}
 
 #[cfg(unix)]
 fn signal_process_group(pgid: u32, sig: u8) {
@@ -255,6 +308,7 @@ fn run_daemon(sock_path: &Path) -> io::Result<()> {
     if let Some(parent) = sock_path.parent() {
         fs::create_dir_all(parent)?;
     }
+    evict_listener_at(sock_path);
     let _ = fs::remove_file(sock_path);
 
     let listener = match UnixListener::bind(sock_path) {
@@ -282,11 +336,51 @@ fn run_daemon(sock_path: &Path) -> io::Result<()> {
     Ok(())
 }
 
+// Probe the daemon at `sock_path`: connect, send PING, expect PONG payload to
+// equal our own SANDBOX_DIR. Exits 0 if the incumbent matches, 1 otherwise
+// (no socket, no listener, wedged daemon, or daemon serving a stale dir).
+fn run_daemon_check(sock_path: &Path) -> ! {
+    use std::time::Duration;
+
+    let mut stream = match UnixStream::connect(sock_path) {
+        Ok(s) => s,
+        Err(_) => process::exit(1),
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
+
+    if write_frame(&mut stream, FRAME_PING, &[]).is_err() {
+        process::exit(1);
+    }
+    let (ftype, data) = match read_frame(&mut stream) {
+        Ok(v) => v,
+        Err(_) => process::exit(1),
+    };
+    if ftype != FRAME_PONG {
+        process::exit(1);
+    }
+    let reported = String::from_utf8_lossy(&data);
+    let expected = sandbox_dir().to_string_lossy().into_owned();
+    if reported == expected {
+        process::exit(0);
+    }
+    eprintln!(
+        "sandbox daemon-check: incumbent SANDBOX_DIR={} expected={}",
+        reported, expected
+    );
+    process::exit(1);
+}
+
 fn handle_client(mut conn: UnixStream) -> io::Result<()> {
     let (ftype, data) = match read_frame(&mut conn) {
         Ok(v) => v,
         Err(_) => return Ok(()),
     };
+    if ftype == FRAME_PING {
+        let dir = sandbox_dir().to_string_lossy().into_owned();
+        let _ = write_frame(&mut conn, FRAME_PONG, dir.as_bytes());
+        return Ok(());
+    }
     if ftype != FRAME_EXEC {
         return Ok(());
     }
@@ -699,6 +793,7 @@ fn run_map(bin_dir: &Path, cmd_name: &str, exec_path: Option<&str>, remove: bool
 fn usage() -> ! {
     eprintln!("usage:");
     eprintln!("  sandbox daemon [--socket PATH]              start host daemon");
+    eprintln!("  sandbox daemon-check                        probe daemon at $SANDBOX_DIR; exit 0 if healthy and matching");
     eprintln!("  sandbox run <cmd> [args...]                 run whitelisted command via daemon");
     eprintln!(
         "  sandbox map <alias> [--exec PATH] [--remove]  create/remove symlink shim in \
@@ -743,6 +838,9 @@ fn main() {
                 eprintln!("sandbox daemon: {}", e);
                 process::exit(1);
             }
+        }
+        "daemon-check" => {
+            run_daemon_check(&socket_path());
         }
         "run" => {
             if args.len() < 3 {
