@@ -35,8 +35,17 @@ if [ -n "$SANDBOX_MAP_PROCESSES" ]; then
     fi
 
     mkdir -p "$SANDBOX_DIR/bin"
-    # Shims are symlinks to $SANDBOX_DIR/bin/sandbox, so the binary must live here.
-    cp -u "$(command -v sandbox)" "$SANDBOX_DIR/bin/sandbox"
+    # Shims are symlinks to $SANDBOX_DIR/bin/sandbox, so the binary must live
+    # here. Use atomic rename (write tmp, mv) instead of `cp -u` so an
+    # incumbent daemon executing this same path doesn't trip ETXTBSY — mv
+    # unlinks the old inode (still mapped by the running daemon, fine) and
+    # puts the new file at the path.
+    src=$(command -v sandbox)
+    dst="$SANDBOX_DIR/bin/sandbox"
+    if [ ! -e "$dst" ] || [ "$src" -nt "$dst" ]; then
+        tmp=$(mktemp "${dst}.XXXXXX")
+        cp "$src" "$tmp" && chmod 755 "$tmp" && mv -f "$tmp" "$dst"
+    fi
 
     # Probe the incumbent daemon (if any). `daemon-check` PINGs the socket and
     # verifies the responder reports our SANDBOX_DIR — this catches stale
